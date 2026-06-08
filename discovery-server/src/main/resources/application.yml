@@ -1,0 +1,65 @@
+server:
+  port: 8761
+
+spring:
+  application:
+    name: discovery-server
+
+# ---------------------------------------------------------------------------
+# Eureka server configuration
+# ---------------------------------------------------------------------------
+eureka:
+  instance:
+    hostname: localhost
+    # Use IP address so Docker / Kubernetes containers resolve correctly
+    prefer-ip-address: false
+
+  client:
+    # This node IS the registry — it must not register itself as a client
+    register-with-eureka: false
+    # No peer to fetch the registry from
+    fetch-registry: false
+    service-url:
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+
+  server:
+    # -------------------------------------------------------------------------
+    # Self-preservation OFF
+    # In a small dev/staging cluster the renewal threshold is never met, so
+    # Eureka would incorrectly consider healthy services as "missing" and refuse
+    # to evict their stale registrations. Disabling self-preservation makes the
+    # registry evict instances aggressively — correct behaviour for local mesh.
+    # -------------------------------------------------------------------------
+    enable-self-preservation: false
+
+    # Sweep expired leases every 2 s (default is 60 s).
+    # This ensures a crashed service disappears from the registry quickly so
+    # the gateway stops routing to it without a long wait.
+    eviction-interval-timer-in-ms: 2000
+
+    # Number of seconds before a missing heartbeat triggers eviction.
+    # Services send a heartbeat every 30 s by default; 90 s gives three misses.
+    lease-expiration-duration-in-seconds: 90
+
+# ---------------------------------------------------------------------------
+# Actuator — expose /actuator/health for docker-compose health checks
+# ---------------------------------------------------------------------------
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      show-details: always
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging:
+  level:
+    com.netflix.eureka: WARN
+    com.netflix.discovery: WARN
+    com.demo.upimesh.discovery: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

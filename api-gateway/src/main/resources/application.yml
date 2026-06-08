@@ -1,0 +1,126 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  # -------------------------------------------------------------------------
+  # Spring Cloud Gateway — reactive route table
+  # All paths are forwarded to Eureka-registered services via lb:// URIs.
+  # The gateway strips the first path segment (the service prefix) before
+  # forwarding so downstream controllers see their natural @RequestMapping paths.
+  #
+  # Actual endpoint inventory (from ApiController.java):
+  #   GET  /api/mesh/state          → mesh state  (ROLE_USER)
+  #   POST /api/mesh/gossip         → gossip round (ROLE_USER)
+  #   POST /api/mesh/flush          → bridge flush (ROLE_BRIDGE)
+  #   POST /api/mesh/reset          → reset mesh   (ROLE_BRIDGE)
+  #   POST /api/bridge/ingest       → raw ingest   (ROLE_BRIDGE)
+  #   GET  /api/accounts            → ledger view  (ROLE_USER)
+  #   GET  /api/transactions        → tx history   (ROLE_USER)
+  #   POST /api/payment/**          → payment ops  (authenticated)
+  # -------------------------------------------------------------------------
+  cloud:
+    gateway:
+      # Enable Eureka-based lb:// URI resolution
+      discovery:
+        locator:
+          enabled: false   # manual routes preferred — no auto-discovery magic
+
+      routes:
+        # ── Mesh Service routes ──────────────────────────────────────────────
+        - id: mesh-service-route
+          uri: lb://mesh-service
+          predicates:
+            - Path=/api/mesh/**
+          filters:
+            # Add a request-id header for distributed tracing correlation
+            - AddRequestHeader=X-Gateway-Source, api-gateway
+            # Strip the first path segment (/api) so mesh-service sees /mesh/**
+            # Comment out if mesh-service is also prefixed with /api
+            # - StripPrefix=0
+            - name: CircuitBreaker
+              args:
+                name: meshCircuitBreaker
+                fallbackUri: forward:/fallback/mesh
+
+        # ── Bridge Ingest route (production endpoint) ────────────────────────
+        - id: bridge-ingest-route
+          uri: lb://mesh-service
+          predicates:
+            - Path=/api/bridge/**
+          filters:
+            - AddRequestHeader=X-Gateway-Source, api-gateway
+            - name: CircuitBreaker
+              args:
+                name: bridgeCircuitBreaker
+                fallbackUri: forward:/fallback/bridge
+
+        # ── Payment Service routes ───────────────────────────────────────────
+        - id: payment-service-route
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/payment/**
+          filters:
+            - AddRequestHeader=X-Gateway-Source, api-gateway
+            - name: CircuitBreaker
+              args:
+                name: paymentCircuitBreaker
+                fallbackUri: forward:/fallback/payment
+
+      # Global filter defaults
+      default-filters:
+        # Propagate the JWT downstream so microservices can do fine-grained authz
+        - TokenRelay=
+
+# -------------------------------------------------------------------------
+# Eureka client — this gateway registers itself and queries the registry
+# -------------------------------------------------------------------------
+eureka:
+  instance:
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://${EUREKA_HOST:localhost}:8761/eureka/
+    registry-fetch-interval-seconds: 5
+
+# -------------------------------------------------------------------------
+# JWT — secret used to sign/verify tokens issued by the auth-service.
+# In production: inject via Kubernetes secret or Vault; never commit the
+# actual value. The 512-bit key satisfies HS512 minimum key-length.
+# -------------------------------------------------------------------------
+security:
+  jwt:
+    secret: ${JWT_SECRET:CHANGE_ME_IN_PRODUCTION_USE_A_512_BIT_KEY_MINIMUM_64_CHARS_LONG_SECRET}
+    # Tokens are rejected if they arrive after this window (clock skew tolerance)
+    allowed-clock-skew-seconds: 30
+
+# -------------------------------------------------------------------------
+# Actuator
+# -------------------------------------------------------------------------
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, gateway
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+# -------------------------------------------------------------------------
+# Logging
+# -------------------------------------------------------------------------
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    org.springframework.security: INFO
+    com.demo.upimesh.gateway: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

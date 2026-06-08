@@ -1,0 +1,181 @@
+# =============================================================================
+#  UPI Offline Mesh — Microservices Infrastructure
+#  Architecture: Database-per-Service (strict isolation via named networks)
+#
+#  Services & their datastores:
+#    payment-service  ──►  payment-postgres  (PostgreSQL 16 — ledger DB)
+#    mesh-service     ──►  mesh-redis        (Redis 7 — distributed idempotency)
+#    *both services*  ──►  kafka-broker      (Kafka KRaft — async event bus)
+#
+#  Network topology (enforces DB-per-service contract):
+#    payment-net  : payment-postgres + payment-service only
+#    mesh-net     : mesh-redis       + mesh-service only
+#    kafka-net    : kafka-broker     + both services (shared event bus)
+# =============================================================================
+
+name: upi-offline-mesh
+
+# ---------------------------------------------------------------------------
+# Top-level networks — each service gets exactly the networks it needs.
+# No service can accidentally reach another service's datastore.
+# ---------------------------------------------------------------------------
+networks:
+  payment-net:
+    driver: bridge
+    name: payment-net
+  mesh-net:
+    driver: bridge
+    name: mesh-net
+  kafka-net:
+    driver: bridge
+    name: kafka-net
+
+# ---------------------------------------------------------------------------
+# Named volumes — data survives container restarts
+# ---------------------------------------------------------------------------
+volumes:
+  payment-postgres-data:
+    name: payment-postgres-data
+  mesh-redis-data:
+    name: mesh-redis-data
+  kafka-kraft-data:
+    name: kafka-kraft-data
+
+# ===========================================================================
+# SERVICES
+# ===========================================================================
+services:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  #  PAYMENT-POSTGRES
+  #  Owner  : payment-service
+  #  Purpose: Persistent double-entry ledger (accounts + transactions)
+  #  Port   : 5432 (standard PostgreSQL)
+  #  Network: payment-net ONLY — mesh-service cannot reach this container
+  # ─────────────────────────────────────────────────────────────────────────
+  payment-postgres:
+    image: postgres:16-alpine
+    container_name: payment-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: upimesh_ledger
+      POSTGRES_USER: payment_svc
+      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD:-changeme_in_production}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - payment-postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro   # optional DDL seeds
+    networks:
+      - payment-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment_svc -d upimesh_ledger"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ─────────────────────────────────────────────────────────────────────────
+  #  MESH-REDIS
+  #  Owner  : mesh-service
+  #  Purpose: Distributed idempotency tracking (SETNX + TTL per packet hash)
+  #           Replaces the in-process ConcurrentHashMap in IdempotencyService.
+  #           Handles concurrent bridge uploads across multiple instances.
+  #  Port   : 6379 (standard Redis)
+  #  Network: mesh-net ONLY — payment-service cannot reach this container
+  # ─────────────────────────────────────────────────────────────────────────
+  mesh-redis:
+    image: redis:7.4-alpine
+    container_name: mesh-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --requirepass ${REDIS_PASSWORD:-changeme_in_production}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - mesh-redis-data:/data
+    networks:
+      - mesh-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme_in_production}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ─────────────────────────────────────────────────────────────────────────
+  #  KAFKA-BROKER  (KRaft mode — no ZooKeeper dependency)
+  #  Owner  : shared event bus
+  #  Purpose: Async event-driven processing between payment-service and
+  #           mesh-service (e.g., packet.received → payment.settled events).
+  #           KRaft eliminates ZooKeeper for a leaner, production-ready setup.
+  #  Ports  : 9092 (PLAINTEXT — internal broker-to-broker / service traffic)
+  #           9093 (CONTROLLER — KRaft controller quorum, internal only)
+  #           9094 (EXTERNAL  — host machine access for dev tooling/CLI)
+  #  Network: kafka-net — joined by both payment-service and mesh-service
+  # ─────────────────────────────────────────────────────────────────────────
+  kafka-broker:
+    image: apache/kafka:3.9.0
+    container_name: kafka-broker
+    restart: unless-stopped
+    environment:
+      # ── KRaft identity ──────────────────────────────────────────────────
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller           # combined mode (single node)
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-broker:9093
+
+      # ── Listener configuration ──────────────────────────────────────────
+      # PLAINTEXT  : service-to-broker traffic inside kafka-net
+      # CONTROLLER : KRaft internal controller listener (never exposed)
+      # EXTERNAL   : host → container (dev CLI access on port 9094)
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # ── Cluster UUID (stable across restarts) ───────────────────────────
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
+
+      # ── Topic defaults ───────────────────────────────────────────────────
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1              # single-node; set to 3 in prod cluster
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+
+      # ── Log retention ────────────────────────────────────────────────────
+      KAFKA_LOG_RETENTION_HOURS: 168                   # 7 days
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824              # 1 GiB per segment
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+      # ── Performance tuning ───────────────────────────────────────────────
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+    ports:
+      - "9092:9092"   # PLAINTEXT — internal (services inside kafka-net)
+      - "9094:9094"   # EXTERNAL  — dev tooling from host (kafka-topics.sh etc.)
+      # 9093 is intentionally NOT published — controller port is cluster-internal
+    volumes:
+      - kafka-kraft-data:/var/lib/kafka/data
+    networks:
+      - kafka-net
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - >
+          /opt/kafka/bin/kafka-broker-api-versions.sh
+          --bootstrap-server localhost:9092
+          > /dev/null 2>&1
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
