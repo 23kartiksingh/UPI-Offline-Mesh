@@ -66,7 +66,7 @@ public class JwtAuthenticationFilter implements WebFilter {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ROLES_CLAIM = "roles";
 
-    @Value("${security.jwt.secret}")
+    @Value("${security.jwt.secret:THIS_IS_A_TEMPORARY_SECRET_KEY_THAT_IS_EXACTLY_64_BYTES_LONG_FOR_DEV}")
     private String jwtSecretString;
 
     @Value("${security.jwt.allowed-clock-skew-seconds:30}")

@@ -19,7 +19,7 @@
 
     <properties>
         <java.version>25</java.version>
-        <spring-cloud.version>2025.0.0</spring-cloud.version>
+        <spring-cloud.version>2025.1.1</spring-cloud.version>
         <!-- JJWT 0.12.x — fluent API, aligns with JDK 25 module system -->
         <jjwt.version>0.12.6</jjwt.version>
     </properties>
@@ -44,7 +44,7 @@
         -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-gateway</artifactId>
+            <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
         </dependency>
 
         <!--

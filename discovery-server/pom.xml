@@ -7,10 +7,8 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.6</version>
-        <relativePath/>
+        <version>4.0.6</version> <relativePath/>
     </parent>
-
     <groupId>com.demo.upimesh</groupId>
     <artifactId>discovery-server</artifactId>
     <version>0.0.1-SNAPSHOT</version>
@@ -24,7 +22,9 @@
           Spring Cloud 2025.0.x is the release train that targets Spring Boot 4.0.x.
           Update to the actual GA tag once the BOM is published on Maven Central.
         -->
-        <spring-cloud.version>2025.0.0</spring-cloud.version>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <spring-cloud.version>2025.1.1</spring-cloud.version>
     </properties>
 
     <dependencyManagement>
