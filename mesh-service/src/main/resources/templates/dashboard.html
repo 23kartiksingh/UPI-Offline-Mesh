@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>UPI Offline Mesh — Demo</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0; padding: 24px; background: #0d1117; color: #e6edf3;
+        }
+        h1 { margin-top: 0; color: #f0f6fc; }
+        h2 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 4px; margin-top: 32px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .grid { display: grid; gap: 16px; }
+        .grid-2 { grid-template-columns: 1fr 1fr; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+        .device {
+            border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-bottom: 8px;
+            background: #0d1117; transition: box-shadow 0.3s, border-color 0.3s;
+        }
+        .device.bridge { border-color: #2ea043; background: #052e16; }
+        .device.offline { opacity: 0.85; }
+        /* Lit up briefly when a packet hops onto this device */
+        .device.receiving { box-shadow: 0 0 12px #58a6ff88; border-color: #58a6ff; }
+        .badge {
+            display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px;
+            font-weight: 600; margin-left: 8px;
+        }
+        .badge-online { background: #2ea043; color: white; }
+        .badge-offline { background: #6e7681; color: white; }
+        .packet-id {
+            font-family: 'Consolas', 'Monaco', monospace; font-size: 11px;
+            background: #21262d; padding: 2px 6px; border-radius: 3px; margin: 2px;
+            display: inline-block; animation: fadeIn 0.4s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+        button {
+            background: #238636; color: white; border: none; padding: 8px 16px;
+            border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; margin: 4px;
+            transition: background 0.2s;
+        }
+        button:hover { background: #2ea043; }
+        button:disabled { background: #444; cursor: not-allowed; }
+        button.danger { background: #da3633; }
+        button.danger:hover { background: #f85149; }
+        button.secondary { background: #1f6feb; }
+        button.secondary:hover { background: #388bfd; }
+        input, select {
+            background: #0d1117; color: #e6edf3; border: 1px solid #30363d;
+            border-radius: 4px; padding: 6px 10px; font-size: 14px; margin: 4px;
+        }
+        #log {
+            background: #010409; color: #7ee787; padding: 12px; border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', monospace; font-size: 12px;
+            max-height: 260px; overflow-y: auto; white-space: pre-wrap;
+            border: 1px solid #30363d;
+        }
+        .status-SETTLED { color: #56d364; font-weight: 600; }
+        .status-REJECTED { color: #f85149; font-weight: 600; }
+        .status-DUPLICATE_DROPPED { color: #d29922; font-weight: 600; }
+        .status-INVALID, .status-ERROR { color: #f85149; font-weight: 600; }
+        .controls { background: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 16px; }
+        .step-num {
+            display: inline-block; background: #58a6ff; color: white;
+            border-radius: 50%; width: 24px; height: 24px; text-align: center;
+            line-height: 24px; font-weight: 600; margin-right: 8px;
+        }
+        .balance { font-family: 'Consolas', monospace; color: #56d364; font-weight: 600; }
+        .small { font-size: 12px; color: #8b949e; }
+        .crypto-badge {
+            background: #1f2d3a; border: 1px solid #58a6ff44; color: #58a6ff;
+            border-radius: 4px; padding: 2px 8px; font-size: 11px; margin-left: 6px;
+        }
+        .gossip-progress {
+            height: 4px; background: #21262d; border-radius: 2px; margin-top: 8px; overflow: hidden;
+        }
+        .gossip-progress-bar {
+            height: 100%; background: #58a6ff; width: 0%; transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📡 UPI Offline Mesh — Microservices Demo</h1>
+    <p class="small">
+        Packets are RSA-signed on the sender's device, gossip peer-to-peer over BLE, then verified
+        server-side with a two-factor check (RSA signature + PIN) before balances move.
+    </p>
+
+    <div class="controls">
+        <h3 style="margin-top:0">🎬 Demo Flow</h3>
+
+        <div>
+            <span class="step-num">1</span><strong>Compose payment</strong>
+            <span class="crypto-badge">🔐 SHA256withRSA signed</span>
+            <br><br>
+            <select id="senderVpa">
+                <option value="alice@okaxis" data-device="phone-alice">alice@okaxis (offline)</option>
+                <option value="bob@okaxis"   data-device="phone-bob">bob@okaxis (offline)</option>
+                <option value="carol@okaxis" data-device="phone-carol">carol@okaxis (offline)</option>
+                <option value="dave@okaxis"  data-device="bridge-dave">dave@okaxis (4G bridge)</option>
+                <option value="eve@okaxis"   data-device="bridge-eve">eve@okaxis (4G bridge)</option>
+            </select>
+            →
+            <select id="receiverVpa">
+                <option value="bob@okaxis">bob@okaxis</option>
+                <option value="alice@okaxis">alice@okaxis</option>
+                <option value="carol@okaxis">carol@okaxis</option>
+                <option value="dave@okaxis">dave@okaxis</option>
+                <option value="eve@okaxis">eve@okaxis</option>
+            </select>
+            ₹<input type="number" id="amount" value="200" style="width:100px">
+            PIN <input type="text" id="pin" value="1234" style="width:70px" maxlength="4">
+            <button id="sendBtn" onclick="sendPacket()">📤 Inject into Mesh</button>
+        </div>
+
+        <div style="margin-top:16px">
+            <span class="step-num">2</span><strong>Progressive Gossip</strong> — hop-by-hop with visual delay
+            <button class="secondary" id="gossipBtn" onclick="gossipStepByStep()">🔄 Run Gossip Round</button>
+            <div class="gossip-progress" id="gossipProgress" style="display:none">
+                <div class="gossip-progress-bar" id="gossipBar"></div>
+            </div>
+        </div>
+
+        <div style="margin-top:16px">
+            <span class="step-num">3</span><strong>Bridge walks outside, hits 4G</strong>
+            <button class="secondary" id="flushBtn" onclick="flushBridges()">📡 Bridges Upload to Backend</button>
+            <span class="small">(both bridges upload simultaneously — exercises Redis idempotency)</span>
+        </div>
+
+        <div style="margin-top:16px">
+            <button class="danger" onclick="resetMesh()">🗑 Reset Mesh + Cache</button>
+        </div>
+    </div>
+
+    <div class="grid grid-2">
+        <div class="card">
+            <h2>📱 Mesh Devices</h2>
+            <div id="devices"></div>
+        </div>
+
+        <div class="card">
+            <h2>🔐 Verification State</h2>
+            <p class="small" id="cacheInfo">Loading...</p>
+            <p class="small" style="color:#58a6ff">
+                Each settlement triggers: decrypt → RSA-SHA256 verify → PIN hash compare → ledger write → Kafka event.
+                Ledger is isolated in <code>payment-service</code> on port 8082.
+            </p>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+        <h2>🪵 Activity Log</h2>
+        <div id="log"></div>
+    </div>
+</div>
+
+<script>
+// --- Logging ---
+function logMsg(msg, level = 'info') {
+    const el = document.getElementById('log');
+    const colors = { info: '#7ee787', warn: '#d29922', error: '#f85149', crypto: '#58a6ff' };
+    const color = colors[level] || colors.info;
+    const line = `<span style="color:${color}">[${new Date().toLocaleTimeString()}] ${escHtml(msg)}</span>\n`;
+    el.innerHTML = line + el.innerHTML;
+}
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// --- State refresh ---
+async function refresh() {
+    try {
+        const m = await fetch('/api/mesh/state').then(r => r.json());
+        renderDevices(m.devices);
+        document.getElementById('cacheInfo').textContent = `Redis idempotency keys active: ${m.idempotencyCacheSize}`;
+    } catch(e) {
+        console.warn('Refresh failed', e);
+    }
+}
+
+function renderDevices(devices, highlightId = null) {
+    const devicesDiv = document.getElementById('devices');
+    devicesDiv.innerHTML = devices.map(d => `
+        <div class="device ${d.hasInternet ? 'bridge' : 'offline'} ${d.deviceId === highlightId ? 'receiving' : ''}" id="dev-${d.deviceId}">
+            <strong>${escHtml(d.deviceId)}</strong>
+            <span class="badge ${d.hasInternet ? 'badge-online' : 'badge-offline'}">
+                ${d.hasInternet ? '🌐 4G' : '🚫 OFFLINE'}
+            </span>
+            <span class="small"> · ${d.packetCount} packet(s)</span>
+            <div style="margin-top:4px">
+                ${d.packetIds.map(id => `<span class="packet-id">${escHtml(id.substring(0,8))}…</span>`).join('')}
+            </div>
+        </div>
+    `).join('');
+}
+
+// Briefly lights up a device card to visualise a hop arrival
+function flashDevice(deviceId) {
+    const el = document.getElementById(`dev-${deviceId}`);
+    if (el) {
+        el.classList.add('receiving');
+        setTimeout(() => el.classList.remove('receiving'), 600);
+    }
+}
+
+// --- Step 1: Send Packet ---
+// If the selected sender is marked as a bridge (data-bridge="true"), skip gossip and
+// immediately trigger the backend upload — simulates the device already being online.
+// --- Step 1: Send Packet ---
+// --- Step 1: Send Packet ---
+async function sendPacket() {
+    const senderSel = document.getElementById('senderVpa');
+    const selectedOption = senderSel.options[senderSel.selectedIndex];
+
+    // Dynamically grab the exact VPAs and the physical device name
+    const senderVpa = selectedOption.value;
+    const receiverVpa = document.getElementById('receiverVpa').value;
+    const startDev = selectedOption.dataset.device;
+    const isBridge = startDev.startsWith('bridge');
+
+    // ---> THE FRONTEND FIX: Block self-transfers instantly <---
+    if (senderVpa === receiverVpa) {
+        logMsg(`❌ REJECTED: You cannot send money to yourself!`, 'error');
+        return;
+    }
+
+    const body = {
+        senderVpa: senderVpa,
+        receiverVpa: receiverVpa,
+        amount: parseFloat(document.getElementById('amount').value),
+        pin: document.getElementById('pin').value,
+        ttl: 5,
+        startDevice: startDev // Injects into the exact phone you selected!
+    };
+
+    setButtons(false);
+    logMsg(`📤 Creating RSA-signed packet for ${senderVpa}…`, 'crypto');
+    try {
+        const r = await fetch('/api/demo/send', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        }).then(r => r.json());
+
+        if (r.error) { logMsg(`❌ ${r.error}`, 'error'); return; }
+
+        logMsg(`🔐 Signed + encrypted — packet ${r.packetId.substring(0,8)}… (TTL ${r.ttl})`, 'crypto');
+        logMsg(`   cipher preview: ${r.ciphertextPreview}`);
+
+        if (isBridge) {
+            // Sender already has 4G — skip the gossip loop and go straight to upload
+            logMsg(`⚡ ${senderVpa} is a 4G bridge — bypassing gossip, uploading immediately`, 'warn');
+            await refresh();
+            await flushBridges();
+        } else {
+            await refresh();
+        }
+    } catch(e) {
+        logMsg(`❌ Send failed: ${e.message}`, 'error');
+    } finally {
+        setButtons(true);
+    }
+}
+
+// --- Step 2: Progressive Gossip ---
+// Runs N gossip rounds with a 600ms pause between each so you can watch
+// the packet travel node by node instead of teleporting to all devices at once.
+async function gossipStepByStep() {
+    const steps = 4; // rounds that approximate one full BLE broadcast cycle
+    setButtons(false);
+    const progressEl = document.getElementById('gossipProgress');
+    const barEl = document.getElementById('gossipBar');
+    progressEl.style.display = 'block';
+
+    for (let i = 0; i < steps; i++) {
+        barEl.style.width = `${((i + 1) / steps) * 100}%`;
+        try {
+            const r = await fetch('/api/mesh/gossip', {method: 'POST'}).then(r => r.json());
+            if (r.transfers > 0) {
+                const m = await fetch('/api/mesh/state').then(r => r.json());
+                renderDevices(m.devices);
+
+                // Light up devices that received a packet this round
+                Object.entries(r.deviceCounts || {}).forEach(([devId, count]) => {
+                    if (count > 0) flashDevice(devId);
+                });
+                logMsg(`🔄 Gossip step ${i+1}/${steps}: ${r.transfers} transfer(s) — ${JSON.stringify(r.deviceCounts)}`);
+            } else {
+                logMsg(`🔄 Gossip step ${i+1}/${steps}: network saturated, nothing new to forward`);
+                break;
+            }
+        } catch(e) {
+            logMsg(`❌ Gossip step ${i+1} failed: ${e.message}`, 'error');
+            break;
+        }
+        if (i < steps - 1) await sleep(650);
+    }
+
+    progressEl.style.display = 'none';
+    barEl.style.width = '0%';
+    setButtons(true);
+}
+
+// --- Step 3: Flush Bridges ---
+async function flushBridges() {
+    setButtons(false);
+    logMsg(`📡 Bridge nodes hitting 4G — uploading packets…`);
+    try {
+        const r = await fetch('/api/mesh/flush', {method: 'POST'}).then(r => r.json());
+        logMsg(`   ${r.uploadsAttempted} upload attempt(s):`);
+        r.results.forEach(res => {
+            const level = res.outcome === 'SETTLED' ? 'info'
+                        : res.outcome === 'DUPLICATE_DROPPED' ? 'warn' : 'error';
+            logMsg(`   ${res.bridgeNode}: packet ${res.packetId.substring(0,8)}… → ${res.outcome}${res.reason ? ' (' + res.reason + ')' : ''}`, level);
+        });
+        await refresh();
+    } catch(e) {
+        logMsg(`❌ Flush failed: ${e.message}`, 'error');
+    } finally {
+        setButtons(true);
+    }
+}
+
+// --- Reset ---
+async function resetMesh() {
+    await fetch('/api/mesh/reset', {method: 'POST'});
+    logMsg('🗑 Mesh state and Redis cache cleared', 'warn');
+    await refresh();
+}
+
+// --- Helpers ---
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+function setButtons(enabled) {
+    ['sendBtn', 'gossipBtn', 'flushBtn'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = !enabled;
+    });
+}
+
+refresh();
+setInterval(refresh, 4000);
+</script>
+</body>
+</html>

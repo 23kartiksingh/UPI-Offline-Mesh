@@ -50,7 +50,7 @@ services:
   #  PAYMENT-POSTGRES
   #  Owner  : payment-service
   #  Purpose: Persistent double-entry ledger (accounts + transactions)
-  #  Port   : 5432 (standard PostgreSQL)
+  #  Port   : 5433 (Bypassing Windows local Postgres!)
   #  Network: payment-net ONLY — mesh-service cannot reach this container
   # ─────────────────────────────────────────────────────────────────────────
   payment-postgres:
@@ -60,13 +60,13 @@ services:
     environment:
       POSTGRES_DB: upimesh_ledger
       POSTGRES_USER: payment_svc
+      # 👇 This already perfectly fetches from your .env file!
       POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD:-changeme_in_production}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - payment-postgres-data:/var/lib/postgresql/data
-      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro   # optional DDL seeds
     networks:
       - payment-net
     healthcheck:
@@ -125,36 +125,22 @@ services:
     container_name: kafka-broker
     restart: unless-stopped
     environment:
-      # ── KRaft identity ──────────────────────────────────────────────────
       KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller           # combined mode (single node)
+      KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-broker:9093
 
-      # ── Listener configuration ──────────────────────────────────────────
-      # PLAINTEXT  : service-to-broker traffic inside kafka-net
-      # CONTROLLER : KRaft internal controller listener (never exposed)
-      # EXTERNAL   : host → container (dev CLI access on port 9094)
+      # Use 0.0.0.0 to listen on all interfaces
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:9092,EXTERNAL://localhost:9094
+
+      # ADVERTISED_LISTENERS are what Kafka tells clients to use.
+      # Kafka internal services use the container name 'kafka-broker'.
+      # External tools/apps on Windows use 'localhost'.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:9092,CONTROLLER://kafka-broker:9093,EXTERNAL://localhost:9094
+
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-
-      # ── Cluster UUID (stable across restarts) ───────────────────────────
-      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
-
-      # ── Topic defaults ───────────────────────────────────────────────────
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_NUM_PARTITIONS: 3
-      KAFKA_DEFAULT_REPLICATION_FACTOR: 1              # single-node; set to 3 in prod cluster
-      KAFKA_MIN_INSYNC_REPLICAS: 1
-
-      # ── Log retention ────────────────────────────────────────────────────
-      KAFKA_LOG_RETENTION_HOURS: 168                   # 7 days
-      KAFKA_LOG_SEGMENT_BYTES: 1073741824              # 1 GiB per segment
-      KAFKA_LOG_DIRS: /var/lib/kafka/data
-
-      # ── Performance tuning ───────────────────────────────────────────────
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
