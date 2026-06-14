@@ -2,177 +2,863 @@
 <html xmlns:th="http://www.thymeleaf.org" lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>UPI Offline Mesh — Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        * { box-sizing: border-box; }
+        :root {
+            --bg-base:      #080b12;
+            --bg-surface:   #0e1420;
+            --bg-elevated:  #141c2e;
+            --bg-input:     #0a0f1c;
+            --border:       #1e2d47;
+            --border-glow:  #2a4a8a;
+            --text-primary: #e2eaff;
+            --text-secondary: #6b82a8;
+            --text-muted:   #3d5070;
+            --accent-blue:  #4f8ef7;
+            --accent-cyan:  #00d4ff;
+            --accent-green: #00e676;
+            --accent-amber: #ffb300;
+            --accent-red:   #ff4757;
+            --accent-purple: #b388ff;
+            --green-dim:    #0a2218;
+            --green-border: #00e67633;
+            --red-dim:      #1a0a0a;
+            --radius-sm:    6px;
+            --radius-md:    12px;
+            --radius-lg:    18px;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            margin: 0; padding: 24px; background: #0d1117; color: #e6edf3;
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-base);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
         }
-        h1 { margin-top: 0; color: #f0f6fc; }
-        h2 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 4px; margin-top: 32px; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .grid { display: grid; gap: 16px; }
-        .grid-2 { grid-template-columns: 1fr 1fr; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
-        .device {
-            border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-bottom: 8px;
-            background: #0d1117; transition: box-shadow 0.3s, border-color 0.3s;
+
+        /* ── Animated background mesh grid ── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(var(--border) 1px, transparent 1px),
+                linear-gradient(90deg, var(--border) 1px, transparent 1px);
+            background-size: 40px 40px;
+            opacity: 0.3;
+            pointer-events: none;
+            z-index: 0;
         }
-        .device.bridge { border-color: #2ea043; background: #052e16; }
-        .device.offline { opacity: 0.85; }
-        /* Lit up briefly when a packet hops onto this device */
-        .device.receiving { box-shadow: 0 0 12px #58a6ff88; border-color: #58a6ff; }
-        .badge {
-            display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px;
-            font-weight: 600; margin-left: 8px;
+
+        /* Radial glow from top */
+        body::after {
+            content: '';
+            position: fixed;
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 900px;
+            height: 600px;
+            background: radial-gradient(ellipse, rgba(79,142,247,0.08) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
         }
-        .badge-online { background: #2ea043; color: white; }
-        .badge-offline { background: #6e7681; color: white; }
-        .packet-id {
-            font-family: 'Consolas', 'Monaco', monospace; font-size: 11px;
-            background: #21262d; padding: 2px 6px; border-radius: 3px; margin: 2px;
-            display: inline-block; animation: fadeIn 0.4s ease;
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 1240px;
+            margin: 0 auto;
+            padding: 32px 24px 64px;
         }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-        button {
-            background: #238636; color: white; border: none; padding: 8px 16px;
-            border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; margin: 4px;
-            transition: background 0.2s;
+
+        /* ── Header ── */
+        .header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
         }
-        button:hover { background: #2ea043; }
-        button:disabled { background: #444; cursor: not-allowed; }
-        button.danger { background: #da3633; }
-        button.danger:hover { background: #f85149; }
-        button.secondary { background: #1f6feb; }
-        button.secondary:hover { background: #388bfd; }
-        input, select {
-            background: #0d1117; color: #e6edf3; border: 1px solid #30363d;
-            border-radius: 4px; padding: 6px 10px; font-size: 14px; margin: 4px;
+
+        .header-left h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        #log {
-            background: #010409; color: #7ee787; padding: 12px; border-radius: 6px;
-            font-family: 'Consolas', 'Monaco', monospace; font-size: 12px;
-            max-height: 260px; overflow-y: auto; white-space: pre-wrap;
-            border: 1px solid #30363d;
+
+        .header-left h1 .icon {
+            width: 38px; height: 38px;
+            background: linear-gradient(135deg, #1a3a6e, #2a5cbf);
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            border: 1px solid var(--border-glow);
         }
-        .status-SETTLED { color: #56d364; font-weight: 600; }
-        .status-REJECTED { color: #f85149; font-weight: 600; }
-        .status-DUPLICATE_DROPPED { color: #d29922; font-weight: 600; }
-        .status-INVALID, .status-ERROR { color: #f85149; font-weight: 600; }
-        .controls { background: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 16px; }
+
+        .header-left p {
+            margin-top: 6px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            max-width: 600px;
+        }
+
+        .header-pills {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: 20px;
+            border: 1px solid;
+            font-family: 'JetBrains Mono', monospace;
+            white-space: nowrap;
+        }
+        .pill-blue   { color: var(--accent-blue);   border-color: #4f8ef733; background: #4f8ef710; }
+        .pill-green  { color: var(--accent-green);  border-color: #00e67633; background: #00e67610; }
+        .pill-amber  { color: var(--accent-amber);  border-color: #ffb30033; background: #ffb30010; }
+        .pill-cyan   { color: var(--accent-cyan);   border-color: #00d4ff33; background: #00d4ff10; }
+        .pill-purple { color: var(--accent-purple); border-color: #b388ff33; background: #b388ff10; }
+
+        /* ── Section headings ── */
+        .section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--border-glow), transparent);
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-title .dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--accent-blue);
+            box-shadow: 0 0 6px var(--accent-blue);
+        }
+
+        /* ── Layout grid ── */
+        .layout-grid {
+            display: grid;
+            gap: 16px;
+        }
+        .col-2 { grid-template-columns: 1fr 1fr; }
+        .col-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+        /* ── Steps Panel (Demo Flow) ── */
+        .steps-panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            margin-bottom: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .steps-panel::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
+        }
+
+        .steps-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .steps-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .steps-header .badge-live {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: var(--accent-green);
+            border: 1px solid var(--green-border);
+            background: var(--green-dim);
+            padding: 2px 8px;
+            border-radius: 20px;
+            animation: pulse-green 2s infinite;
+        }
+
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .step-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 16px;
+            border-radius: var(--radius-md);
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            margin-bottom: 12px;
+            transition: border-color 0.2s;
+        }
+
+        .step-row:hover { border-color: var(--border-glow); }
+
+        .step-row:last-of-type { margin-bottom: 0; }
+
         .step-num {
-            display: inline-block; background: #58a6ff; color: white;
-            border-radius: 50%; width: 24px; height: 24px; text-align: center;
-            line-height: 24px; font-weight: 600; margin-right: 8px;
+            flex-shrink: 0;
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-blue), #2a5cbf);
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 12px rgba(79,142,247,0.4);
         }
-        .balance { font-family: 'Consolas', monospace; color: #56d364; font-weight: 600; }
-        .small { font-size: 12px; color: #8b949e; }
-        .crypto-badge {
-            background: #1f2d3a; border: 1px solid #58a6ff44; color: #58a6ff;
-            border-radius: 4px; padding: 2px 8px; font-size: 11px; margin-left: 6px;
+
+        .step-content { flex: 1; }
+
+        .step-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
         }
-        .gossip-progress {
-            height: 4px; background: #21262d; border-radius: 2px; margin-top: 8px; overflow: hidden;
+
+        .crypto-tag {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--accent-purple);
+            border: 1px solid #b388ff33;
+            background: #b388ff0d;
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 0.3px;
         }
-        .gossip-progress-bar {
-            height: 100%; background: #58a6ff; width: 0%; transition: width 0.3s ease;
+
+        /* ── Form inputs ── */
+        .input-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        select, input[type="number"], input[type="text"] {
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 8px 12px;
+            font-size: 13px;
+            font-family: 'Inter', sans-serif;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            appearance: none;
+        }
+
+        select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%236b82a8' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 28px;
+            cursor: pointer;
+        }
+
+        select:focus, input:focus {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(79,142,247,0.15);
+        }
+
+        .input-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .arrow-sep {
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            border: none;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: white;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+
+        .btn:hover::after { opacity: 0.07; }
+
+        .btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .btn:disabled::after { display: none; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #1a5cbf, #2a7aef);
+            color: white;
+            border: 1px solid #2a6ae044;
+            box-shadow: 0 2px 12px rgba(42,122,239,0.3);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            box-shadow: 0 4px 20px rgba(42,122,239,0.5);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #0f2a4a, #1a3d6e);
+            color: var(--accent-cyan);
+            border: 1px solid #00d4ff22;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            border-color: #00d4ff55;
+            box-shadow: 0 2px 12px rgba(0,212,255,0.15);
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #2a0a0a, #4a1010);
+            color: var(--accent-red);
+            border: 1px solid #ff475722;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            border-color: #ff475555;
+            box-shadow: 0 2px 12px rgba(255,71,87,0.2);
+        }
+
+        .btn-reset-row {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 4px;
+        }
+
+        /* ── Gossip progress bar ── */
+        .gossip-track {
+            height: 3px;
+            background: var(--border);
+            border-radius: 2px;
+            margin-top: 12px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .gossip-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+            width: 0%;
+            transition: width 0.3s ease;
+            box-shadow: 0 0 8px var(--accent-cyan);
+        }
+
+        /* ── Device Cards ── */
+        .device {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 12px 14px;
+            margin-bottom: 8px;
+            background: var(--bg-elevated);
+            transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .device:last-child { margin-bottom: 0; }
+
+        .device::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 3px;
+            border-radius: 0;
+            background: var(--border);
+            transition: background 0.3s;
+        }
+
+        .device.bridge::before  { background: var(--accent-green); }
+        .device.offline::before { background: var(--text-muted); }
+
+        .device.bridge {
+            border-color: var(--green-border);
+            background: #061a10;
+        }
+
+        .device.receiving {
+            box-shadow: 0 0 20px rgba(79,142,247,0.25);
+            border-color: var(--accent-blue);
+            transform: scale(1.01);
+        }
+
+        .device.receiving::before { background: var(--accent-blue); }
+
+        .device-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .device-icon {
+            font-size: 16px;
+        }
+
+        .device-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .device-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 20px;
+            letter-spacing: 0.4px;
+            margin-left: auto;
+        }
+
+        .device-badge.online {
+            background: var(--green-dim);
+            color: var(--accent-green);
+            border: 1px solid var(--green-border);
+        }
+
+        .device-badge.offline-badge {
+            background: #14181f;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+
+        .device-badge .dot {
+            width: 5px; height: 5px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .device-badge.online .dot {
+            animation: pulse-green 1.5s infinite;
+        }
+
+        .device-stats {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .packet-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 8px;
+        }
+
+        .packet-chip {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            background: #0d1830;
+            color: var(--accent-blue);
+            border: 1px solid #1e3a6e;
+            padding: 2px 8px;
+            border-radius: 4px;
+            animation: chipIn 0.3s ease;
+        }
+
+        @keyframes chipIn {
+            from { opacity: 0; transform: scale(0.85); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+
+        /* ── Info panel ── */
+        .info-panel {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        }
+
+        .info-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .info-row:last-child { margin-bottom: 0; }
+
+        .info-key {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .info-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--accent-cyan);
+            font-weight: 500;
+        }
+
+        .pipeline-steps {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        .pipeline-node {
+            display: inline-flex;
+            align-items: center;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .pipeline-node.active { color: var(--accent-blue); }
+
+        .pipeline-arrow {
+            color: var(--border);
+            font-size: 14px;
+            padding: 0 4px;
+        }
+
+        /* ── Activity Log ── */
+        #log {
+            background: #04070f;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11.5px;
+            max-height: 260px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.7;
+        }
+
+        #log::-webkit-scrollbar { width: 4px; }
+        #log::-webkit-scrollbar-track { background: transparent; }
+        #log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+        .log-empty {
+            color: var(--text-muted);
+            font-style: italic;
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+        }
+
+        /* ── Status colors in log ── */
+        .log-info   { color: #7dd3fc; }
+        .log-success{ color: var(--accent-green); }
+        .log-warn   { color: var(--accent-amber); }
+        .log-error  { color: var(--accent-red); }
+        .log-crypto { color: var(--accent-purple); }
+        .log-ts     { color: var(--text-muted); }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+            .col-2, .col-3 { grid-template-columns: 1fr; }
+            .header { flex-direction: column; gap: 16px; }
+            .header-pills { justify-content: flex-start; }
+            .input-row { gap: 6px; }
         }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>📡 UPI Offline Mesh — Microservices Demo</h1>
-    <p class="small">
-        Packets are RSA-signed on the sender's device, gossip peer-to-peer over BLE, then verified
-        server-side with a two-factor check (RSA signature + PIN) before balances move.
-    </p>
 
-    <div class="controls">
-        <h3 style="margin-top:0">🎬 Demo Flow</h3>
+    <!-- ── Header ── -->
+    <div class="header">
+        <div class="header-left">
+            <h1>
+                <span class="icon">📡</span>
+                UPI Offline Mesh Network
+            </h1>
+            <p>
+                Packets are RSA-signed on the sender's device, gossip peer-to-peer over BLE,
+                then verified server-side with a two-factor check (RSA&nbsp;+&nbsp;PIN) before balances move.
+            </p>
+        </div>
+        <div class="header-pills">
+            <span class="pill pill-blue">☕ Java 25</span>
+            <span class="pill pill-green">🐘 PostgreSQL</span>
+            <span class="pill pill-amber">📨 Kafka</span>
+            <span class="pill pill-cyan">⚡ Redis</span>
+            <span class="pill pill-purple">🔐 RSA-2048</span>
+        </div>
+    </div>
 
-        <div>
-            <span class="step-num">1</span><strong>Compose payment</strong>
-            <span class="crypto-badge">🔐 SHA256withRSA signed</span>
-            <br><br>
-            <select id="senderVpa">
-                <option value="alice@okaxis" data-device="phone-alice">alice@okaxis (offline)</option>
-                <option value="bob@okaxis"   data-device="phone-bob">bob@okaxis (offline)</option>
-                <option value="carol@okaxis" data-device="phone-carol">carol@okaxis (offline)</option>
-                <option value="dave@okaxis"  data-device="bridge-dave">dave@okaxis (4G bridge)</option>
-                <option value="eve@okaxis"   data-device="bridge-eve">eve@okaxis (4G bridge)</option>
-            </select>
-            →
-            <select id="receiverVpa">
-                <option value="bob@okaxis">bob@okaxis</option>
-                <option value="alice@okaxis">alice@okaxis</option>
-                <option value="carol@okaxis">carol@okaxis</option>
-                <option value="dave@okaxis">dave@okaxis</option>
-                <option value="eve@okaxis">eve@okaxis</option>
-            </select>
-            ₹<input type="number" id="amount" value="200" style="width:100px">
-            PIN <input type="text" id="pin" value="1234" style="width:70px" maxlength="4">
-            <button id="sendBtn" onclick="sendPacket()">📤 Inject into Mesh</button>
+    <!-- ── Demo Flow Panel ── -->
+    <div class="steps-panel">
+        <div class="steps-header">
+            <h2>🎬 Demo Flow</h2>
+            <span class="badge-live">● Live</span>
         </div>
 
-        <div style="margin-top:16px">
-            <span class="step-num">2</span><strong>Progressive Gossip</strong> — hop-by-hop with visual delay
-            <button class="secondary" id="gossipBtn" onclick="gossipStepByStep()">🔄 Run Gossip Round</button>
-            <div class="gossip-progress" id="gossipProgress" style="display:none">
-                <div class="gossip-progress-bar" id="gossipBar"></div>
+        <!-- Step 1 -->
+        <div class="step-row">
+            <div class="step-num">1</div>
+            <div class="step-content">
+                <div class="step-label">
+                    Compose &amp; Sign Payment
+                    <span class="crypto-tag">SHA256withRSA</span>
+                </div>
+                <div class="input-row">
+                    <select id="senderVpa">
+                        <option value="alice@okaxis"   data-device="phone-alice">📵 alice@okaxis (offline)</option>
+                        <option value="bob@okaxis"     data-device="phone-bob">📵 bob@okaxis (offline)</option>
+                        <option value="carol@okaxis"   data-device="phone-carol">📵 carol@okaxis (offline)</option>
+                        <option value="dave@okaxis"    data-device="bridge-dave">🌐 dave@okaxis (4G bridge)</option>
+                        <option value="eve@okaxis"     data-device="bridge-eve">🌐 eve@okaxis (4G bridge)</option>
+                    </select>
+                    <span class="arrow-sep">→</span>
+                    <select id="receiverVpa">
+                        <option value="bob@okaxis">bob@okaxis</option>
+                        <option value="alice@okaxis">alice@okaxis</option>
+                        <option value="carol@okaxis">carol@okaxis</option>
+                        <option value="dave@okaxis">dave@okaxis</option>
+                        <option value="eve@okaxis">eve@okaxis</option>
+                    </select>
+                    <span class="input-label">₹</span>
+                    <input type="number" id="amount" value="200" style="width:90px">
+                    <span class="input-label">PIN</span>
+                    <input type="text" id="pin" value="1234" style="width:70px" maxlength="4">
+                    <button class="btn btn-primary" id="sendBtn" onclick="sendPacket()">
+                        📤 Inject into Mesh
+                    </button>
+                </div>
             </div>
         </div>
 
-        <div style="margin-top:16px">
-            <span class="step-num">3</span><strong>Bridge walks outside, hits 4G</strong>
-            <button class="secondary" id="flushBtn" onclick="flushBridges()">📡 Bridges Upload to Backend</button>
-            <span class="small">(both bridges upload simultaneously — exercises Redis idempotency)</span>
+        <!-- Step 2 -->
+        <div class="step-row">
+            <div class="step-num">2</div>
+            <div class="step-content">
+                <div class="step-label">Progressive Gossip — hop-by-hop with visual delay</div>
+                <button class="btn btn-secondary" id="gossipBtn" onclick="gossipStepByStep()">
+                    🔄 Run Gossip Round
+                </button>
+                <div class="gossip-track" id="gossipProgress">
+                    <div class="gossip-fill" id="gossipBar"></div>
+                </div>
+            </div>
         </div>
 
-        <div style="margin-top:16px">
-            <button class="danger" onclick="resetMesh()">🗑 Reset Mesh + Cache</button>
+        <!-- Step 3 -->
+        <div class="step-row">
+            <div class="step-num">3</div>
+            <div class="step-content">
+                <div class="step-label">Bridge walks outside, hits 4G/5G</div>
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <button class="btn btn-secondary" id="flushBtn" onclick="flushBridges()">
+                        📡 Bridges Upload to Backend
+                    </button>
+                    <span style="font-size:11px; color:var(--text-muted);">both bridges upload simultaneously — exercises Redis idempotency</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reset -->
+        <div class="btn-reset-row" style="margin-top:12px;">
+            <button class="btn btn-danger" onclick="resetMesh()">🗑 Reset Mesh + Cache</button>
         </div>
     </div>
 
-    <div class="grid grid-2">
+    <!-- ── Middle row: Devices + Verification State ── -->
+    <div class="layout-grid col-2" style="margin-bottom:16px;">
+
+        <!-- Devices -->
         <div class="card">
-            <h2>📱 Mesh Devices</h2>
-            <div id="devices"></div>
+            <div class="card-title">
+                <span class="dot"></span>
+                📱 Mesh Devices
+            </div>
+            <div id="devices">
+                <p style="color:var(--text-muted); font-size:12px;">Loading devices…</p>
+            </div>
         </div>
 
+        <!-- Verification State -->
         <div class="card">
-            <h2>🔐 Verification State</h2>
-            <p class="small" id="cacheInfo">Loading...</p>
-            <p class="small" style="color:#58a6ff">
-                Each settlement triggers: decrypt → RSA-SHA256 verify → PIN hash compare → ledger write → Kafka event.
-                Ledger is isolated in <code>payment-service</code> on port 8082.
-            </p>
+            <div class="card-title">
+                <span class="dot" style="background:var(--accent-purple); box-shadow: 0 0 6px var(--accent-purple);"></span>
+                🔐 Verification State
+            </div>
+
+            <div class="info-panel">
+                <div class="info-row">
+                    <span class="info-key">Redis Idempotency Keys</span>
+                    <span class="info-val" id="cacheInfo">—</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-key">Ledger Service</span>
+                    <span class="info-val">payment-service:8082</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-key">Crypto Mode</span>
+                    <span class="info-val">RSA-OAEP + AES-256-GCM</span>
+                </div>
+            </div>
+
+            <div style="margin-top:4px;">
+                <div class="section-title">Settlement Pipeline</div>
+                <div class="pipeline-steps">
+                    <span class="pipeline-node active">decrypt</span>
+                    <span class="pipeline-arrow">→</span>
+                    <span class="pipeline-node active">RSA verify</span>
+                    <span class="pipeline-arrow">→</span>
+                    <span class="pipeline-node active">PIN check</span>
+                    <span class="pipeline-arrow">→</span>
+                    <span class="pipeline-node active">ledger write</span>
+                    <span class="pipeline-arrow">→</span>
+                    <span class="pipeline-node active">Kafka event</span>
+                </div>
+            </div>
         </div>
     </div>
 
-    <div class="card" style="margin-top:16px">
-        <h2>🪵 Activity Log</h2>
-        <div id="log"></div>
+    <!-- ── Activity Log ── -->
+    <div class="card">
+        <div class="card-title">
+            <span class="dot" style="background:var(--accent-amber); box-shadow: 0 0 6px var(--accent-amber);"></span>
+            🪵 Activity Log
+        </div>
+        <div id="log"><span class="log-empty">Waiting for activity…</span></div>
     </div>
+
 </div>
 
 <script>
-// --- Logging ---
+// ── Logging ──────────────────────────────────────────────────────────────
 function logMsg(msg, level = 'info') {
     const el = document.getElementById('log');
-    const colors = { info: '#7ee787', warn: '#d29922', error: '#f85149', crypto: '#58a6ff' };
-    const color = colors[level] || colors.info;
-    const line = `<span style="color:${color}">[${new Date().toLocaleTimeString()}] ${escHtml(msg)}</span>\n`;
-    el.innerHTML = line + el.innerHTML;
-}
-function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    // Remove placeholder on first log
+    const empty = el.querySelector('.log-empty');
+    if (empty) empty.remove();
 
-// --- State refresh ---
+    const cls = {
+        info:   'log-info',
+        success:'log-success',
+        warn:   'log-warn',
+        error:  'log-error',
+        crypto: 'log-crypto'
+    }[level] || 'log-info';
+
+    const ts = new Date().toLocaleTimeString('en-IN', { hour12: false });
+    el.innerHTML =
+        `<span class="log-ts">[${ts}]</span> <span class="${cls}">${escHtml(msg)}</span>\n` +
+        el.innerHTML;
+}
+
+function escHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+// ── State Refresh ─────────────────────────────────────────────────────────
 async function refresh() {
     try {
         const m = await fetch('/api/mesh/state').then(r => r.json());
         renderDevices(m.devices);
-        document.getElementById('cacheInfo').textContent = `Redis idempotency keys active: ${m.idempotencyCacheSize}`;
+        document.getElementById('cacheInfo').textContent = m.idempotencyCacheSize + ' active key(s)';
     } catch(e) {
         console.warn('Refresh failed', e);
     }
@@ -180,74 +866,83 @@ async function refresh() {
 
 function renderDevices(devices, highlightId = null) {
     const devicesDiv = document.getElementById('devices');
-    devicesDiv.innerHTML = devices.map(d => `
-        <div class="device ${d.hasInternet ? 'bridge' : 'offline'} ${d.deviceId === highlightId ? 'receiving' : ''}" id="dev-${d.deviceId}">
-            <strong>${escHtml(d.deviceId)}</strong>
-            <span class="badge ${d.hasInternet ? 'badge-online' : 'badge-offline'}">
-                ${d.hasInternet ? '🌐 4G' : '🚫 OFFLINE'}
-            </span>
-            <span class="small"> · ${d.packetCount} packet(s)</span>
-            <div style="margin-top:4px">
-                ${d.packetIds.map(id => `<span class="packet-id">${escHtml(id.substring(0,8))}…</span>`).join('')}
+    if (!devices || devices.length === 0) {
+        devicesDiv.innerHTML = '<p style="color:var(--text-muted); font-size:12px;">No devices registered.</p>';
+        return;
+    }
+    devicesDiv.innerHTML = devices.map(d => {
+        const isBridge = d.hasInternet;
+        const icon = isBridge ? '🌐' : '📵';
+        const cls = isBridge ? 'bridge' : 'offline';
+        const isHighlighted = d.deviceId === highlightId ? 'receiving' : '';
+        const chips = d.packetIds.map(id =>
+            `<span class="packet-chip">${escHtml(id.substring(0,8))}…</span>`
+        ).join('');
+
+        return `
+        <div class="device ${cls} ${isHighlighted}" id="dev-${escHtml(d.deviceId)}">
+            <div class="device-header">
+                <span class="device-icon">${icon}</span>
+                <span class="device-name">${escHtml(d.deviceId)}</span>
+                <span class="device-badge ${isBridge ? 'online' : 'offline-badge'}">
+                    <span class="dot"></span>
+                    ${isBridge ? '4G / 5G' : 'OFFLINE'}
+                </span>
             </div>
-        </div>
-    `).join('');
+            <div class="device-stats">
+                <span>${d.packetCount} packet${d.packetCount !== 1 ? 's' : ''} held</span>
+            </div>
+            ${chips ? `<div class="packet-chips">${chips}</div>` : ''}
+        </div>`;
+    }).join('');
 }
 
-// Briefly lights up a device card to visualise a hop arrival
 function flashDevice(deviceId) {
     const el = document.getElementById(`dev-${deviceId}`);
     if (el) {
         el.classList.add('receiving');
-        setTimeout(() => el.classList.remove('receiving'), 600);
+        setTimeout(() => el.classList.remove('receiving'), 700);
     }
 }
 
-// --- Step 1: Send Packet ---
-// If the selected sender is marked as a bridge (data-bridge="true"), skip gossip and
-// immediately trigger the backend upload — simulates the device already being online.
-// --- Step 1: Send Packet ---
-// --- Step 1: Send Packet ---
+// ── Step 1: Send Packet ───────────────────────────────────────────────────
 async function sendPacket() {
     const senderSel = document.getElementById('senderVpa');
     const selectedOption = senderSel.options[senderSel.selectedIndex];
-
-    // Dynamically grab the exact VPAs and the physical device name
-    const senderVpa = selectedOption.value;
+    const senderVpa   = selectedOption.value;
     const receiverVpa = document.getElementById('receiverVpa').value;
-    const startDev = selectedOption.dataset.device;
-    const isBridge = startDev.startsWith('bridge');
+    const startDev    = selectedOption.dataset.device;
+    const isBridge    = startDev.startsWith('bridge');
 
-    // ---> THE FRONTEND FIX: Block self-transfers instantly <---
     if (senderVpa === receiverVpa) {
-        logMsg(`❌ REJECTED: You cannot send money to yourself!`, 'error');
+        logMsg('❌ REJECTED: Cannot send money to yourself!', 'error');
         return;
     }
 
     const body = {
-        senderVpa: senderVpa,
-        receiverVpa: receiverVpa,
+        senderVpa,
+        receiverVpa,
         amount: parseFloat(document.getElementById('amount').value),
         pin: document.getElementById('pin').value,
         ttl: 5,
-        startDevice: startDev // Injects into the exact phone you selected!
+        startDevice: startDev
     };
 
     setButtons(false);
     logMsg(`📤 Creating RSA-signed packet for ${senderVpa}…`, 'crypto');
     try {
         const r = await fetch('/api/demo/send', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         }).then(r => r.json());
 
         if (r.error) { logMsg(`❌ ${r.error}`, 'error'); return; }
 
         logMsg(`🔐 Signed + encrypted — packet ${r.packetId.substring(0,8)}… (TTL ${r.ttl})`, 'crypto');
-        logMsg(`   cipher preview: ${r.ciphertextPreview}`);
+        logMsg(`   cipher: ${r.ciphertextPreview}`);
 
         if (isBridge) {
-            // Sender already has 4G — skip the gossip loop and go straight to upload
             logMsg(`⚡ ${senderVpa} is a 4G bridge — bypassing gossip, uploading immediately`, 'warn');
             await refresh();
             await flushBridges();
@@ -261,25 +956,21 @@ async function sendPacket() {
     }
 }
 
-// --- Step 2: Progressive Gossip ---
-// Runs N gossip rounds with a 600ms pause between each so you can watch
-// the packet travel node by node instead of teleporting to all devices at once.
+// ── Step 2: Progressive Gossip ────────────────────────────────────────────
 async function gossipStepByStep() {
-    const steps = 4; // rounds that approximate one full BLE broadcast cycle
+    const steps = 4;
     setButtons(false);
     const progressEl = document.getElementById('gossipProgress');
-    const barEl = document.getElementById('gossipBar');
+    const barEl      = document.getElementById('gossipBar');
     progressEl.style.display = 'block';
 
     for (let i = 0; i < steps; i++) {
         barEl.style.width = `${((i + 1) / steps) * 100}%`;
         try {
-            const r = await fetch('/api/mesh/gossip', {method: 'POST'}).then(r => r.json());
+            const r = await fetch('/api/mesh/gossip', { method: 'POST' }).then(r => r.json());
             if (r.transfers > 0) {
                 const m = await fetch('/api/mesh/state').then(r => r.json());
                 renderDevices(m.devices);
-
-                // Light up devices that received a packet this round
                 Object.entries(r.deviceCounts || {}).forEach(([devId, count]) => {
                     if (count > 0) flashDevice(devId);
                 });
@@ -300,17 +991,22 @@ async function gossipStepByStep() {
     setButtons(true);
 }
 
-// --- Step 3: Flush Bridges ---
+// ── Step 3: Flush Bridges ─────────────────────────────────────────────────
 async function flushBridges() {
     setButtons(false);
-    logMsg(`📡 Bridge nodes hitting 4G — uploading packets…`);
+    logMsg(`📡 Bridge nodes hitting 4G/5G — uploading packets…`);
     try {
-        const r = await fetch('/api/mesh/flush', {method: 'POST'}).then(r => r.json());
+        const r = await fetch('/api/mesh/flush', { method: 'POST' }).then(r => r.json());
         logMsg(`   ${r.uploadsAttempted} upload attempt(s):`);
         r.results.forEach(res => {
-            const level = res.outcome === 'SETTLED' ? 'info'
-                        : res.outcome === 'DUPLICATE_DROPPED' ? 'warn' : 'error';
-            logMsg(`   ${res.bridgeNode}: packet ${res.packetId.substring(0,8)}… → ${res.outcome}${res.reason ? ' (' + res.reason + ')' : ''}`, level);
+            const level = res.outcome === 'SETTLED'          ? 'success'
+                        : res.outcome === 'DUPLICATE_DROPPED' ? 'warn'
+                        : 'error';
+            logMsg(
+                `   ${res.bridgeNode}: ${res.packetId.substring(0,8)}… → ${res.outcome}` +
+                (res.reason ? ` (${res.reason})` : ''),
+                level
+            );
         });
         await refresh();
     } catch(e) {
@@ -320,14 +1016,14 @@ async function flushBridges() {
     }
 }
 
-// --- Reset ---
+// ── Reset ─────────────────────────────────────────────────────────────────
 async function resetMesh() {
-    await fetch('/api/mesh/reset', {method: 'POST'});
+    await fetch('/api/mesh/reset', { method: 'POST' });
     logMsg('🗑 Mesh state and Redis cache cleared', 'warn');
     await refresh();
 }
 
-// --- Helpers ---
+// ── Helpers ───────────────────────────────────────────────────────────────
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function setButtons(enabled) {
